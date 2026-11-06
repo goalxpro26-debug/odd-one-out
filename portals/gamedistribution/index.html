@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Odd One Out: Spot the Difference</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: #1a1033; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; color: #fff; }
+  #wrap { position: relative; width: min(100vw, 480px); height: min(100dvh, 860px); background: linear-gradient(180deg,#2b1a5e 0%,#1a1033 55%,#241145 100%); overflow: hidden; display: flex; flex-direction: column; }
+  /* HUD */
+  #hud { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-size: 15px; font-weight: 700; }
+  #hud .pill { background: rgba(255,255,255,.12); border-radius: 999px; padding: 5px 10px; white-space: nowrap; }
+  #hud .spacer { flex: 1; }
+  #hud button { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 5px 11px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  #hud button:hover { background: rgba(255,255,255,.25); }
+  #timerbar { height: 8px; margin: 0 12px 6px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; }
+  #timerfill { height: 100%; width: 100%; background: #4ade80; border-radius: 999px; transition: width .1s linear; }
+  #timerfill.low { background: #f87171; }
+  #stage { position: relative; flex: 1; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; cursor: pointer; }
+  #hint { text-align: center; font-size: 14px; opacity: .85; padding: 6px 12px 10px; min-height: 30px; }
+  /* Overlays */
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; background: rgba(20,10,45,.82); backdrop-filter: blur(3px); z-index: 5; }
+  .overlay.hidden { display: none; }
+  .overlay h1 { font-size: 34px; line-height: 1.1; }
+  .overlay h1 span { color: #fbbf24; }
+  .overlay h2 { font-size: 28px; }
+  .overlay p { font-size: 16px; line-height: 1.5; opacity: .92; max-width: 340px; }
+  .overlay .sub { font-size: 14px; opacity: .75; }
+  .bigbtn { background: #f59e0b; color: #1a1033; border: none; border-radius: 999px; padding: 14px 34px; font-size: 19px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 0 #b45309; }
+  .bigbtn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b45309; }
+  .ghostbtn { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,.5); border-radius: 999px; padding: 10px 22px; font-size: 16px; font-weight: 700; cursor: pointer; }
+  .howto { text-align: left; font-size: 15px; line-height: 1.65; background: rgba(255,255,255,.08); border-radius: 14px; padding: 14px 18px; max-width: 360px; }
+  #toast { position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%) scale(.8); font-size: 30px; font-weight: 900; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 4; text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+  #toast.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  #toast.good { color: #4ade80; } #toast.bad { color: #f87171; }
+  .stat { font-size: 18px; font-weight: 700; }
+  .stat b { color: #fbbf24; }
+  @media (max-height: 700px) { .overlay h1 { font-size: 28px; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <span class="pill" id="hud-level">Level 1/20</span>
+    <span class="pill" id="hud-score">Score 0</span>
+    <span class="pill" id="hud-lives">❤❤❤</span>
+    <span class="spacer"></span>
+    <button id="btn-mute" title="Mute (M)">🔊</button>
+    <button id="btn-pause" title="Pause (P)">⏸</button>
+  </div>
+  <div id="timerbar"><div id="timerfill"></div></div>
+  <div id="stage">
+    <canvas id="game" width="480" height="640"></canvas>
+    <div id="toast"></div>
+
+    <div class="overlay" id="ov-menu">
+      <h1>Odd One Out<br><span>Spot the Difference</span></h1>
+      <p>One little blob in the crowd is different. Find it before time runs out!</p>
+      <div class="howto">
+        👀 <b>Look</b> — every blob looks the same… except one.<br>
+        👆 <b>Tap</b> the odd one out to score.<br>
+        ❤️ <b>3 lives</b> — a wrong tap costs a life.<br>
+        ⏱️ <b>Beat the clock</b> — later levels are bigger, subtler and faster.<br>
+        🔥 <b>Combos</b> — correct taps in a row earn bonus points.
+      </div>
+      <button class="bigbtn" id="btn-start">▶ Play</button>
+      <p class="sub">20 levels • original art, drawn in code • no downloads, no sign-up</p>
+    </div>
+
+    <div class="overlay hidden" id="ov-pause">
+      <h2>Paused</h2>
+      <p>Take a breath. The blobs will wait.</p>
+      <button class="bigbtn" id="btn-resume">▶ Resume</button>
+      <button class="ghostbtn" id="btn-restart1">↻ Restart game</button>
+    </div>
+
+    <div class="overlay hidden" id="ov-clear">
+      <h2 id="clear-title">Level clear! 🎉</h2>
+      <p class="stat" id="clear-stats"></p>
+      <p class="sub">Next level coming up…</p>
+    </div>
+
+    <div class="overlay hidden" id="ov-win">
+      <h2>🏆 You found them all!</h2>
+      <p>You spotted the odd one out in all 20 levels.</p>
+      <p class="stat">Final score: <b id="win-score">0</b></p>
+      <p class="stat" id="win-detail"></p>
+      <button class="bigbtn" id="btn-again-win">↻ Play again</button>
+    </div>
+
+    <div class="overlay hidden" id="ov-over">
+      <h2>Game over 💔</h2>
+      <p>You ran out of lives.</p>
+      <p class="stat">Score: <b id="over-score">0</b> • Reached level <b id="over-level">1</b></p>
+      <button class="bigbtn" id="btn-again-over">↻ Try again</button>
+    </div>
+  </div>
+  <div id="hint">Tap the one blob that is different!</div>
+</div>
+
+<!-- GameDistribution SDK: GD_OPTIONS MUST precede the SDK script, and the
+     SDK script MUST precede the game script. This file is the GD entry
+     only; the plain index.html and the other portal entries have no GD
+     script tag at all.
+     STAGED BUILD — gameId is a PLACEHOLDER. After the portal entry exists,
+     replace "[YOUR GD GAME ID HERE]" with the real 32-char hex gameId from
+     the GD Upload tab and REBUILD; do not upload this staged ZIP as final.
+     Canvas id is `game` (this game's own canvas). -->
+<script>
+  window["GD_OPTIONS"] = {
+    gameId: "[YOUR GD GAME ID HERE]",
+    onEvent: function (event) {
+      var h = window.__gdEventHandler;
+      if (typeof h === "function") h(event);
+      else (window.__gdEventQueue = window.__gdEventQueue || []).push(event);
+    }
+  };
+</script>
+<script src="https://html5.api.gamedistribution.com/main.min.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   Odd One Out: Spot the Difference — original pilot game
+   All art is drawn procedurally on canvas (original "blob"
+   characters). No copied assets, characters, music or code.
+   ============================================================ */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 640;
+
+// ---------- state ----------
+const state = {
+  screen: 'menu', // menu | playing | paused | clear | win | over
+  level: 1, score: 0, lives: 3, combo: 0, bestCombo: 0,
+  timeLeft: 30, timeMax: 30,
+  correctTaps: 0, wrongTaps: 0,
+  figures: [], oddIndex: -1, diffType: '', grid: { cols: 3, rows: 3 },
+  muted: false, lastTickSecond: -1,
+};
+let lastTs = 0, clearTimer = null;
+
+// ---------- portal hook surface (inert without a portal bridge) ----------
+// The trailing portal script assigns these; with no bridge they stay null
+// and the game behaves exactly as the original. Hooks fire only from user
+// gestures (Play click) or natural breaks (level clear / win), never on load.
+window.__oddPortalHooks = { onLevelStart: null, onWin: null, onLevelClear: null };
+function portalHook(name) {
+  try {
+    const h = window.__oddPortalHooks && window.__oddPortalHooks[name];
+    if (typeof h === 'function') h();
+  } catch (e) { /* never let a portal hook break the game */ }
+}
+
+// ---------- audio (WebAudio, synthesised, no copyrighted music) ----------
+let audioCtx = null, musicTimer = null, musicStep = 0;
+function ensureAudio() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tone(freq, dur, type, vol, when) {
+  if (!audioCtx || state.muted) return;
+  const t = audioCtx.currentTime + (when || 0);
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(vol || 0.15, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+const sfx = {
+  click()  { tone(600, 0.06, 'triangle', 0.10); },
+  correct(){ tone(523, 0.12, 'sine', 0.18); tone(659, 0.12, 'sine', 0.18, 0.09); tone(784, 0.22, 'sine', 0.20, 0.18); },
+  wrong()  { tone(180, 0.18, 'sawtooth', 0.12); tone(120, 0.25, 'sawtooth', 0.10, 0.08); },
+  win()    { [523,659,784,1047].forEach((f,i)=>tone(f,0.25,'sine',0.18,i*0.13)); },
+  over()   { [400,350,300,200].forEach((f,i)=>tone(f,0.25,'triangle',0.14,i*0.15)); },
+};
+// Simple cheerful loop: C-major pentatonic arpeggio, original melody.
+const MELODY = [262,330,392,523,392,330,262,196, 262,330,392,523,659,523,392,330];
+function startMusic() {
+  stopMusic();
+  musicTimer = setInterval(() => {
+    if (state.muted || !audioCtx || state.screen !== 'playing') return;
+    tone(MELODY[musicStep % MELODY.length], 0.28, 'triangle', 0.045);
+    musicStep++;
+  }, 300);
+}
+function stopMusic() { if (musicTimer) { clearInterval(musicTimer); musicTimer = null; } }
+
+// ---------- level generation ----------
+const DIFFS = ['color','hat','eyes','mouth','accessory','flip','size','ears'];
+function levelConfig(lv) {
+  const cols = lv <= 2 ? 3 : lv <= 5 ? 4 : lv <= 9 ? 5 : lv <= 13 ? 6 : 7;
+  const rows = lv <= 2 ? 3 : lv <= 5 ? 4 : lv <= 9 ? 5 : lv <= 13 ? 5 : 6;
+  const timeMax = Math.max(12, 32 - lv);           // 31s -> 12s
+  const colorDelta = Math.max(8, 46 - lv * 2);     // subtler as levels rise
+  const diffType = DIFFS[(lv - 1) % DIFFS.length];
+  return { cols, rows, timeMax, colorDelta, diffType };
+}
+function rand(a, b) { return a + Math.random() * (b - a); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function baseSpec(lv) {
+  const hue = Math.floor(rand(0, 360));
+  return {
+    hue, sat: 70, light: 62,
+    hat: pick(['cap','beanie','party','none']),
+    hatHue: Math.floor(rand(0, 360)),
+    eyes: pick(['round','happy','sleepy']),
+    mouth: pick(['smile','open','flat']),
+    accessory: pick(['none','glasses','bow','scarf']),
+    flip: false, size: 1, ears: pick(['none','round','pointy']),
+  };
+}
+function makeOddSpec(base, diffType, colorDelta) {
+  const odd = JSON.parse(JSON.stringify(base));
+  if (diffType === 'color') { odd.hue = (base.hue + colorDelta) % 360; odd.light = Math.min(78, base.light + 6); }
+  else if (diffType === 'hat') { odd.hat = base.hat === 'cap' ? 'beanie' : 'cap'; }
+  else if (diffType === 'eyes') { odd.eyes = base.eyes === 'round' ? 'happy' : 'round'; }
+  else if (diffType === 'mouth') { odd.mouth = base.mouth === 'smile' ? 'flat' : 'smile'; }
+  else if (diffType === 'accessory') { odd.accessory = base.accessory === 'none' ? 'glasses' : 'none'; }
+  else if (diffType === 'flip') { odd.flip = true; }
+  else if (diffType === 'size') { odd.size = 0.82; }
+  else if (diffType === 'ears') { odd.ears = base.ears === 'none' ? 'round' : 'none'; }
+  return odd;
+}
+function hintFor(diffType) {
+  return {
+    color: 'Hint: one blob is a slightly different colour.',
+    hat: 'Hint: check the hats — one is different.',
+    eyes: 'Hint: look at the eyes.',
+    mouth: 'Hint: one mouth is different.',
+    accessory: 'Hint: check for glasses, bows and scarves.',
+    flip: 'Hint: one blob is facing the other way.',
+    size: 'Hint: one blob is a little smaller.',
+    ears: 'Hint: check the ears.',
+  }[diffType] || 'Tap the one blob that is different!';
+}
+
+function buildLevel(lv) {
+  const cfg = levelConfig(lv);
+  state.grid = { cols: cfg.cols, rows: cfg.rows };
+  state.timeMax = cfg.timeMax; state.timeLeft = cfg.timeMax;
+  state.diffType = cfg.diffType; state.lastTickSecond = -1;
+  const base = baseSpec(lv);
+  const n = cfg.cols * cfg.rows;
+  state.oddIndex = Math.floor(Math.random() * n);
+  const odd = makeOddSpec(base, cfg.diffType, cfg.colorDelta);
+  // Board geometry (canvas coords)
+  const padX = 24, padTop = 30, padBottom = 20;
+  const cw = (W - padX * 2) / cfg.cols, ch = (H - padTop - padBottom) / cfg.rows;
+  state.figures = [];
+  for (let i = 0; i < n; i++) {
+    const col = i % cfg.cols, row = Math.floor(i / cfg.cols);
+    const cx = padX + col * cw + cw / 2, cy = padTop + row * ch + ch / 2;
+    const r = Math.min(cw, ch) * 0.36;
+    state.figures.push({ i, cx, cy, r, spec: i === state.oddIndex ? odd : JSON.parse(JSON.stringify(base)), isOdd: i === state.oddIndex });
+  }
+  document.getElementById('hint').textContent = hintFor(cfg.diffType);
+  updateHUD();
+}
+
+// ---------- drawing ----------
+function drawBlob(f) {
+  const s = f.spec, r = f.r * s.size;
+  const x = f.cx, y = f.cy;
+  ctx.save();
+  if (s.flip) { ctx.translate(x, y); ctx.scale(-1, 1); ctx.translate(-x, -y); }
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.95, r * 0.8, r * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+  // ears
+  if (s.ears !== 'none') {
+    ctx.fillStyle = `hsl(${s.hue},${s.sat}%,${s.light - 8}%)`;
+    const ey = y - r * 0.85, ex = r * 0.55;
+    if (s.ears === 'round') {
+      ctx.beginPath(); ctx.arc(x - ex, ey, r * 0.28, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + ex, ey, r * 0.28, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(x - ex - r * 0.2, ey + r * 0.2); ctx.lineTo(x - ex, ey - r * 0.35); ctx.lineTo(x - ex + r * 0.25, ey + r * 0.15); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + ex - r * 0.25, ey + r * 0.15); ctx.lineTo(x + ex, ey - r * 0.35); ctx.lineTo(x + ex + r * 0.2, ey + r * 0.2); ctx.closePath(); ctx.fill();
+    }
+  }
+  // body
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.1, x, y, r * 1.05);
+  g.addColorStop(0, `hsl(${s.hue},${s.sat}%,${s.light + 12}%)`);
+  g.addColorStop(1, `hsl(${s.hue},${s.sat}%,${s.light - 6}%)`);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  // belly
+  ctx.fillStyle = `hsla(${s.hue},${s.sat}%,88%,.55)`;
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.42, r * 0.45, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  // arms
+  ctx.strokeStyle = `hsl(${s.hue},${s.sat}%,${s.light - 10}%)`; ctx.lineWidth = r * 0.14; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - r * 0.9, y + r * 0.1); ctx.lineTo(x - r * 1.15, y + r * 0.45); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + r * 0.9, y + r * 0.1); ctx.lineTo(x + r * 1.15, y + r * 0.45); ctx.stroke();
+  // eyes
+  const eyeY = y - r * 0.15, eyeDX = r * 0.34, eyeR = r * 0.17;
+  if (s.eyes === 'happy') {
+    ctx.strokeStyle = '#241145'; ctx.lineWidth = r * 0.09;
+    [-1, 1].forEach(d => { ctx.beginPath(); ctx.arc(x + d * eyeDX, eyeY + r * 0.08, eyeR * 0.8, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); });
+  } else if (s.eyes === 'sleepy') {
+    ctx.strokeStyle = '#241145'; ctx.lineWidth = r * 0.09;
+    [-1, 1].forEach(d => { ctx.beginPath(); ctx.moveTo(x + d * eyeDX - eyeR, eyeY); ctx.lineTo(x + d * eyeDX + eyeR, eyeY); ctx.stroke(); });
+  } else {
+    [-1, 1].forEach(d => {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + d * eyeDX, eyeY, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#241145'; ctx.beginPath(); ctx.arc(x + d * eyeDX + eyeR * 0.25, eyeY, eyeR * 0.5, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+  // cheeks
+  ctx.fillStyle = 'rgba(255,120,150,.45)';
+  ctx.beginPath(); ctx.arc(x - r * 0.55, y + r * 0.18, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r * 0.55, y + r * 0.18, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  // mouth
+  ctx.strokeStyle = '#241145'; ctx.lineWidth = r * 0.08; ctx.lineCap = 'round';
+  if (s.mouth === 'smile') { ctx.beginPath(); ctx.arc(x, y + r * 0.22, r * 0.32, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke(); }
+  else if (s.mouth === 'open') { ctx.fillStyle = '#7c2d12'; ctx.beginPath(); ctx.ellipse(x, y + r * 0.38, r * 0.2, r * 0.26, 0, 0, Math.PI * 2); ctx.fill(); }
+  else { ctx.beginPath(); ctx.moveTo(x - r * 0.25, y + r * 0.38); ctx.lineTo(x + r * 0.25, y + r * 0.38); ctx.stroke(); }
+  // accessory: glasses / bow / scarf
+  if (s.accessory === 'glasses') {
+    ctx.strokeStyle = '#111'; ctx.lineWidth = r * 0.07;
+    [-1, 1].forEach(d => { ctx.beginPath(); ctx.arc(x + d * eyeDX, eyeY, eyeR * 1.25, 0, Math.PI * 2); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(x - eyeDX + eyeR, eyeY); ctx.lineTo(x + eyeDX - eyeR, eyeY); ctx.stroke();
+  } else if (s.accessory === 'bow') {
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath(); ctx.moveTo(x, y - r * 0.78); ctx.lineTo(x - r * 0.3, y - r * 1.0); ctx.lineTo(x - r * 0.3, y - r * 0.58); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x, y - r * 0.78); ctx.lineTo(x + r * 0.3, y - r * 1.0); ctx.lineTo(x + r * 0.3, y - r * 0.58); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - r * 0.78, r * 0.1, 0, Math.PI * 2); ctx.fill();
+  } else if (s.accessory === 'scarf') {
+    ctx.fillStyle = `hsl(${s.hatHue},70%,55%)`;
+    ctx.fillRect(x - r * 0.55, y + r * 0.62, r * 1.1, r * 0.22);
+    ctx.fillRect(x + r * 0.15, y + r * 0.62, r * 0.25, r * 0.55);
+  }
+  // hat
+  if (s.hat === 'cap') {
+    ctx.fillStyle = `hsl(${s.hatHue},70%,50%)`;
+    ctx.beginPath(); ctx.arc(x, y - r * 0.62, r * 0.62, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x - r * 0.62, y - r * 0.62, r * 1.24, r * 0.14);
+    ctx.fillStyle = `hsl(${s.hatHue},70%,65%)`;
+    ctx.beginPath(); ctx.ellipse(x + r * 0.45, y - r * 0.5, r * 0.45, r * 0.12, 0.15, 0, Math.PI * 2); ctx.fill();
+  } else if (s.hat === 'beanie') {
+    ctx.fillStyle = `hsl(${s.hatHue},65%,48%)`;
+    ctx.beginPath(); ctx.arc(x, y - r * 0.55, r * 0.66, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x - r * 0.66, y - r * 0.6, r * 1.32, r * 0.2);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y - r * 1.18, r * 0.18, 0, Math.PI * 2); ctx.fill();
+  } else if (s.hat === 'party') {
+    ctx.fillStyle = `hsl(${s.hatHue},80%,55%)`;
+    ctx.beginPath(); ctx.moveTo(x - r * 0.45, y - r * 0.6); ctx.lineTo(x, y - r * 1.25); ctx.lineTo(x + r * 0.45, y - r * 0.6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(x, y - r * 1.25, r * 0.12, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  // soft background dots
+  ctx.fillStyle = 'rgba(255,255,255,.05)';
+  for (let i = 0; i < 24; i++) {
+    const px = (i * 97) % W, py = (i * 173) % H;
+    ctx.beginPath(); ctx.arc(px, py, 3 + (i % 3), 0, Math.PI * 2); ctx.fill();
+  }
+  if (state.screen === 'playing' || state.screen === 'paused' || state.screen === 'clear') {
+    state.figures.forEach(drawBlob);
+  }
+  if (state.screen === 'paused') {
+    ctx.fillStyle = 'rgba(20,10,45,.45)'; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ---------- HUD / overlays ----------
+function updateHUD() {
+  document.getElementById('hud-level').textContent = `Level ${Math.min(state.level, 20)}/20`;
+  document.getElementById('hud-score').textContent = `Score ${state.score}`;
+  document.getElementById('hud-lives').textContent = '❤'.repeat(Math.max(0, state.lives)) + '🤍'.repeat(Math.max(0, 3 - state.lives));
+  const fill = document.getElementById('timerfill');
+  const pct = Math.max(0, state.timeLeft / state.timeMax * 100);
+  fill.style.width = pct + '%';
+  fill.classList.toggle('low', state.timeLeft <= 5);
+}
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function hideAllOverlays() { ['ov-menu','ov-pause','ov-clear','ov-win','ov-over'].forEach(hide); }
+let toastTimer = null;
+function toast(text, good) {
+  const el = document.getElementById('toast');
+  el.textContent = text; el.className = 'show ' + (good ? 'good' : 'bad');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = ''; }, 700);
+}
+
+// ---------- game flow ----------
+function startGame() {
+  ensureAudio();
+  state.level = 1; state.score = 0; state.lives = 3; state.combo = 0; state.bestCombo = 0;
+  state.correctTaps = 0; state.wrongTaps = 0;
+  state.screen = 'playing';
+  hideAllOverlays();
+  portalHook('onLevelStart');
+  buildLevel(1);
+  startMusic();
+  render();
+}
+function nextLevel() {
+  if (state.level >= 20) { winGame(); return; }
+  state.level++;
+  state.screen = 'playing';
+  hideAllOverlays();
+  buildLevel(state.level);
+  render();
+}
+function winGame() {
+  state.screen = 'win';
+  document.getElementById('win-score').textContent = state.score;
+  document.getElementById('win-detail').textContent = `Best combo ×${state.bestCombo} • ${state.correctTaps} found • ${state.wrongTaps} misses`;
+  hideAllOverlays(); show('ov-win');
+  portalHook('onWin');
+  sfx.win(); stopMusic(); render();
+}
+function gameOver() {
+  state.screen = 'over';
+  document.getElementById('over-score').textContent = state.score;
+  document.getElementById('over-level').textContent = state.level;
+  hideAllOverlays(); show('ov-over');
+  sfx.over(); stopMusic(); render();
+}
+function pauseGame() {
+  if (state.screen !== 'playing') return;
+  state.screen = 'paused'; hideAllOverlays(); show('ov-pause'); render();
+}
+function resumeGame() {
+  if (state.screen !== 'paused') return;
+  state.screen = 'playing'; hideAllOverlays(); render();
+}
+function onCorrect(f) {
+  state.correctTaps++;
+  state.combo++; state.bestCombo = Math.max(state.bestCombo, state.combo);
+  const gained = 100 + Math.round(state.timeLeft) * 5 + (state.combo - 1) * 25;
+  state.score += gained;
+  sfx.correct();
+  toast(`+${gained}${state.combo > 1 ? '  🔥×' + state.combo : ''}`, true);
+  updateHUD();
+  if (state.level >= 20) { winGame(); return; }
+  if (state.level === 5 || state.level === 10 || state.level === 15) portalHook('onLevelClear');
+  state.screen = 'clear';
+  document.getElementById('clear-title').textContent = `Level ${state.level} clear! 🎉`;
+  document.getElementById('clear-stats').textContent = `+${gained} points • Combo ×${state.combo}`;
+  hideAllOverlays(); show('ov-clear'); render();
+  clearTimeout(clearTimer);
+  clearTimer = setTimeout(nextLevel, 1200);
+}
+function onWrong() {
+  state.wrongTaps++;
+  state.combo = 0; state.lives--;
+  sfx.wrong(); toast('Wrong one! −1 ❤', false);
+  updateHUD();
+  if (state.lives <= 0) { gameOver(); }
+  render();
+}
+function onTimeout() {
+  state.combo = 0; state.lives--;
+  sfx.wrong(); toast("Time's up! −1 ❤", false);
+  updateHUD();
+  if (state.lives <= 0) { gameOver(); return; }
+  buildLevel(state.level); // retry same level with a fresh board + timer
+  render();
+}
+
+// ---------- input ----------
+function canvasPos(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const cx = (evt.clientX - rect.left) / rect.width * W;
+  const cy = (evt.clientY - rect.top) / rect.height * H;
+  return { x: cx, y: cy };
+}
+function handleTap(evt) {
+  if (state.screen !== 'playing') return;
+  ensureAudio();
+  const p = canvasPos(evt);
+  // nearest figure within its radius (generous hit area)
+  let best = null, bestD = Infinity;
+  state.figures.forEach(f => {
+    const d = Math.hypot(p.x - f.cx, p.y - f.cy);
+    if (d < bestD) { bestD = d; best = f; }
+  });
+  if (!best || bestD > Math.max(best.r * 1.6, 34)) { sfx.click(); return; }
+  if (best.isOdd) onCorrect(best); else onWrong();
+}
+canvas.addEventListener('pointerdown', handleTap);
+
+// ---------- buttons ----------
+document.getElementById('btn-start').addEventListener('click', () => { sfx.click(); startGame(); });
+document.getElementById('btn-again-win').addEventListener('click', startGame);
+document.getElementById('btn-again-over').addEventListener('click', startGame);
+document.getElementById('btn-restart1').addEventListener('click', startGame);
+document.getElementById('btn-resume').addEventListener('click', resumeGame);
+document.getElementById('btn-pause').addEventListener('click', () => {
+  if (state.screen === 'playing') pauseGame();
+  else if (state.screen === 'paused') resumeGame();
+});
+document.getElementById('btn-mute').addEventListener('click', function () {
+  state.muted = !state.muted;
+  this.textContent = state.muted ? '🔇' : '🔊';
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+    if (state.screen === 'playing') pauseGame();
+    else if (state.screen === 'paused') resumeGame();
+  }
+  if (e.key === 'm' || e.key === 'M') document.getElementById('btn-mute').click();
+});
+
+// ---------- main loop (timer) ----------
+function loop(ts) {
+  const dt = lastTs ? Math.min(0.1, (ts - lastTs) / 1000) : 0;
+  lastTs = ts;
+  if (state.screen === 'playing') {
+    state.timeLeft -= dt;
+    const sec = Math.ceil(state.timeLeft);
+    if (sec <= 5 && sec !== state.lastTickSecond && sec > 0) { state.lastTickSecond = sec; tone(880, 0.07, 'square', 0.06); }
+    if (state.timeLeft <= 0) { state.timeLeft = 0; updateHUD(); onTimeout(); }
+    else updateHUD();
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+
+// ---------- portal pause/mute surface (guarded, portal-neutral) ----------
+// pauseForPortal: pauses ONLY from 'playing', else no-op (returns false).
+// resumeForPortal: resumes ONLY from a bridge pause, else no-op.
+// setMutedDirect: sets the mute flag + button WITHOUT touching any saved
+// setting (there is none in this game) — used ONLY as the mandatory
+// mute-during-ad fallback when the game is not in 'playing' (e.g. the
+// level-clear / win screen at a mid-roll), where the guarded pause above
+// is a correct no-op. The bridge records the pre-ad mute state and
+// restores exactly that state on resume.
+function pauseForPortal() { if (state.screen !== 'playing') return false; pauseGame(); return true; }
+function resumeForPortal() { if (state.screen !== 'paused') return false; resumeGame(); return true; }
+function setMutedDirect(m) {
+  state.muted = !!m;
+  const b = document.getElementById('btn-mute');
+  if (b) b.textContent = state.muted ? '\u{1F507}' : '\u{1F50A}';
+}
+window.__oddPortal = {
+  pause: pauseForPortal, resume: resumeForPortal, setMuted: setMutedDirect,
+  get muted() { return state.muted; }, get screen() { return state.screen; },
+};
+
+// ---------- test hook (state only, no gameplay shortcuts beyond read access) ----------
+window.__oddGame = function () {
+  const odd = state.figures[state.oddIndex];
+  const wrong = state.figures.find(f => !f.isOdd);
+  return {
+    screen: state.screen, level: state.level, score: state.score, lives: state.lives,
+    combo: state.combo, timeLeft: Math.round(state.timeLeft * 10) / 10, timeMax: state.timeMax,
+    figures: state.figures.length, oddIndex: state.oddIndex, diffType: state.diffType,
+    oddCenter: odd ? { x: odd.cx, y: odd.cy } : null,
+    wrongCenter: wrong ? { x: wrong.cx, y: wrong.cy } : null,
+    correctTaps: state.correctTaps, wrongTaps: state.wrongTaps, muted: state.muted,
+  };
+};
+render();
+</script>
+
+<script>
+"use strict";
+/* GameDistribution bridge for Odd One Out — GameDistribution variant ONLY.
+   Game surface: window.__oddPortal (pause/resume/setMuted, guarded).
+   Every SDK call is defensive: with the SDK absent the game plays
+   normally and ad calls are skipped silently. GD: gdsdk.showAd() returns a Promise; the in-flight flag clears in .then() plus a 60s safety valve. */
+(function () {
+  const portal = window.__oddPortal;
+  if (!portal) return;
+  let bridgePaused = false, bridgeMuted = false, wasMutedBeforeAd = false;
+  let preRollShown = false, adInFlight = false, midRollCalls = 0, lastAdError = null;
+  let adTimer = undefined;
+  const clearAdInFlight = () => { adInFlight = false; if (adTimer !== undefined) { clearTimeout(adTimer); adTimer = undefined; } };
+  const onPause = () => {
+    try {
+      if (portal.pause()) bridgePaused = true;
+      else if (!bridgeMuted) { wasMutedBeforeAd = portal.muted; portal.setMuted(true); bridgeMuted = true; }
+      if (bridgePaused && !bridgeMuted) { wasMutedBeforeAd = portal.muted; portal.setMuted(true); bridgeMuted = true; }
+    } catch (e) { /* never let a portal event break the game */ }
+  };
+  const onResume = () => {
+    try {
+      clearAdInFlight();
+      if (bridgePaused) { if (!portal.resume()) { /* left pause by another route */ } bridgePaused = false; }
+      if (bridgeMuted) { portal.setMuted(wasMutedBeforeAd); bridgeMuted = false; }
+    } catch (e) { bridgePaused = false; bridgeMuted = false; }
+  };
+  
+  const gdSdk = () => {
+    const w = window;
+    const s = w.gdsdk;
+    return (s && typeof s.showAd === 'function') ? s : null;
+  };
+  const sdkPresent = () => gdSdk() !== null;
+  // __oddPortalBridge is assigned HERE, before the queue-drain in show_ad
+  // aliases it under the portal's own global name. The notify methods
+  // are lazy wrappers (the const arrow functions are defined in show_ad
+  // below, so a direct reference here would hit the temporal dead zone).
+  window.__oddPortalBridge = {
+    get available() { return sdkPresent(); },
+    get preRollShown() { return preRollShown; },
+    get midRollCalls() { return midRollCalls; },
+    get pausedByPortal() { return bridgePaused; },
+    get mutedByPortal() { return bridgeMuted; },
+    get lastAdError() { return lastAdError; },
+    simulatePause: onPause, simulateResume: onResume,
+    notifyLevelStart: (...a) => notifyLevelStart(...a),
+    notifyWin: (...a) => notifyWin(...a),
+    notifyLevelClear: (...a) => notifyLevelClear(...a),
+  };
+  
+  const showAd = () => {
+    const live = gdSdk();
+    if (!live || adInFlight) return;
+    adInFlight = true;
+    try {
+      const p = Promise.resolve(live.showAd());
+      p.then(() => { adInFlight = false; }, (err) => { lastAdError = String(err); adInFlight = false; });
+      setTimeout(() => { adInFlight = false; }, 60000); // safety valve
+    } catch (err) { lastAdError = String(err); clearAdInFlight(); }
+  };
+  const notifyLevelStart = () => {
+    if (preRollShown) return;
+    preRollShown = true;
+    // PRE-ROLL, first user-initiated Play only; this IS the start signal
+    // (GD has no gameStart() lifecycle call). Never on load.
+    showAd();
+  };
+  const notifyWin = () => { midRollCalls++; showAd(); };
+  const notifyLevelClear = () => { midRollCalls++; showAd(); };
+  // Drain events fired before this bridge ran (GD_OPTIONS.onEvent queues).
+  const handleEvent = (ev) => {
+    try {
+      if (!ev || typeof ev.name !== 'string') return;
+      if (ev.name === 'SDK_GAME_PAUSE') onPause();
+      else if (ev.name === 'SDK_GAME_START') onResume();
+    } catch (e) {}
+  };
+  try {
+    const queued = window.__gdEventQueue || [];
+    window.__gdEventQueue = [];
+    for (const ev of queued) handleEvent(ev);
+    window.__gdEventHandler = handleEvent;
+    window.__gamedistribution = window.__oddPortalBridge;
+  } catch (e) {}
+  window.__oddPortalHooks.onLevelStart = notifyLevelStart;
+  window.__oddPortalHooks.onWin = notifyWin;
+  window.__oddPortalHooks.onLevelClear = notifyLevelClear;
+})();
+</script>
+
+</body>
+</html>
