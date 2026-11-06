@@ -52,4 +52,4 @@ Notes from testing:
 
 ## Status
 
-Pilot build only. **Not submitted to any portal** (GamePix / GameDistribution / GameMonetize or any other). Portal builds would need each portal's SDK, thumbnails, and descriptions added later.
+**Portal status (Nov 6, 2026): IN REVIEW on GamePix** (Game Id PUP7TS) and **ready draft on GameDistribution** (entry 80460, GameId ef1dfa0c75a84d788b4a0e63c31d49d9, Request Activation not clicked — weekly limit). Not submitted to GameMonetize (account banned Nov 6; see GameMonetize restoration work).
